@@ -52,7 +52,7 @@ class JsonProtocol(PeerOverrideProtocol):
     def makeConnection(self, transport):
         directlyProvides(self, providedBy(transport))
         Protocol.makeConnection(self, transport)
-        self.transport.write("o")
+        self.transport.write(b"o")
         self.factory.registerProtocol(self)
         self.wrappedProtocol.makeConnection(self)
     
@@ -60,27 +60,29 @@ class JsonProtocol(PeerOverrideProtocol):
         self.writeSequence([data])
     
     def writeSequence(self, data):
-        for p in data:
-            p = normalize(p, self.parent._options['encoding'])
-        self.transport.write("a{0}".format(json.dumps(data, separators=(',',':'))))
+        data = list(data)
+        for index, p in enumerate(data):
+            data[index] = normalize(p, self.parent._options['encoding'])
+        self.transport.write(
+            b"a" + json.dumps(data, separators=(',',':')).encode('ascii'))
     
     def writeRaw(self, data):
         self.transport.write(data)
     
     def loseConnection(self):
-        self.transport.write('c[3000,"Go away!"]')
+        self.transport.write(b'c[3000,"Go away!"]')
         ProtocolWrapper.loseConnection(self)
     
     def dataReceived(self, data):
         if not data:
             return
         try:
-            dat = json.loads(data)
-        except ValueError:
+            dat = json.loads(data.decode('utf-8'))
+        except (ValueError, UnicodeDecodeError):
             self.transport.loseConnection()
         else:
             for d in dat:
-                ProtocolWrapper.dataReceived(self, d)
+                ProtocolWrapper.dataReceived(self, d.encode('utf-8'))
 
 class PeerOverrideFactory(WrappingFactory):
     protocol = PeerOverrideProtocol
@@ -111,20 +113,20 @@ class RawWebSocket(WebSocketsResource, OldWebSocketsResource):
         if self._factory is None:
             self._makeFactory()
         # Override handling of invalid methods, returning 400 makes SockJS mad
-        if request.method != 'GET':
+        if request.method != b'GET':
             request.setResponseCode(405)
             request.defaultContentType = None # SockJS wants this gone
-            request.setHeader('Allow','GET')
-            return ""
+            request.setHeader(b'Allow', b'GET')
+            return b""
         # Override handling of lack of headers, again SockJS requires non-RFC stuff
-        upgrade = request.getHeader("Upgrade")
-        if upgrade is None or "websocket" not in upgrade.lower():
+        upgrade = request.getHeader(b"Upgrade")
+        if upgrade is None or b"websocket" not in upgrade.lower():
             request.setResponseCode(400)
-            return 'Can "Upgrade" only to "WebSocket".'
-        connection = request.getHeader("Connection")
-        if connection is None or "upgrade" not in connection.lower():
+            return b'Can "Upgrade" only to "WebSocket".'
+        connection = request.getHeader(b"Connection")
+        if connection is None or b"upgrade" not in connection.lower():
             request.setResponseCode(400)
-            return '"Connection" must be "Upgrade".'
+            return b'"Connection" must be "Upgrade".'
         # Defer to inherited methods
         ret = WebSocketsResource.render(self, request) # For RFC versions of websockets
         if ret is NOT_DONE_YET:

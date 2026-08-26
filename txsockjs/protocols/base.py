@@ -37,21 +37,21 @@ class StubResource(resource.Resource, ProtocolWrapper):
         ProtocolWrapper.__init__(self, None, session)
         self.parent = parent
         self.session = session
-        self.putChild("", self)
+        self.putChild(b"", self)
     
     def render_OPTIONS(self, request):
-        method = "POST" if getattr(self, "render_POST", None) is not None else "GET"
+        method = b"POST" if getattr(self, "render_POST", None) is not None else b"GET"
         request.setResponseCode(http.NO_CONTENT)
         self.parent.setBaseHeaders(request,False)
-        request.setHeader('Cache-Control', 'public, max-age=31536000')
-        request.setHeader('access-control-max-age', '31536000')
-        request.setHeader('Expires', 'Fri, 01 Jan 2500 00:00:00 GMT') #Get a new library by then
-        request.setHeader('Access-Control-Allow-Methods', 'OPTIONS, {0}'.format(method)) # Hardcoding this may be bad?
-        return ""
+        request.setHeader(b'Cache-Control', b'public, max-age=31536000')
+        request.setHeader(b'access-control-max-age', b'31536000')
+        request.setHeader(b'Expires', b'Fri, 01 Jan 2500 00:00:00 GMT') #Get a new library by then
+        request.setHeader(b'Access-Control-Allow-Methods', b'OPTIONS, ' + method) # Hardcoding this may be bad?
+        return b""
     
     def connect(self, request):
         if self.session.attached:
-            return 'c[2010,"Another connection still open"]\n'
+            return b'c[2010,"Another connection still open"]\n'
         self.request = request
         directlyProvides(self, providedBy(request.transport))
         protocol.Protocol.makeConnection(self, request.transport)
@@ -124,7 +124,7 @@ class Stub(ProtocolWrapper):
             self.disconnect()
     
     def heartbeat(self):
-        self.pending.append('h')
+        self.pending.append(b'h')
         self.heartbeat_timer = reactor.callLater(self.parent._options['heartbeat'], self.heartbeat)
         self.sendData()
     
@@ -148,8 +148,9 @@ class Stub(ProtocolWrapper):
         self.sendData()
     
     def writeSequence(self, data):
-        for p in data:
-            p = normalize(p, self.parent._options['encoding'])
+        data = list(data)
+        for index, p in enumerate(data):
+            data[index] = normalize(p, self.parent._options['encoding'])
         self.buffer.extend(data)
         self.sendData()
     
@@ -161,11 +162,11 @@ class Stub(ProtocolWrapper):
     def sendData(self):
         if self.transport:
             if self.connecting:
-                self.transport.write('o')
+                self.transport.write(b'o')
                 self.connecting = False
                 self.sendData()
             elif self.disconnecting:
-                self.transport.write('c[3000,"Go away!"]')
+                self.transport.write(b'c[3000,"Go away!"]')
                 if self.transport:
                     self.transport.loseConnection()
             else:
@@ -177,7 +178,8 @@ class Stub(ProtocolWrapper):
     
     def flushData(self):
         if self.buffer:
-            data = 'a{0}'.format(json.dumps(self.buffer, separators=(',',':')))
+            data = b'a' + json.dumps(
+                self.buffer, separators=(',',':')).encode('ascii')
             self.buffer = []
             self.pending.append(data)
     
@@ -188,16 +190,16 @@ class Stub(ProtocolWrapper):
     def dataReceived(self, data):
         if self.timeout.active():
             self.timeout.reset(5)
-        if data == '':
+        if not data:
             return "Payload expected."
         try:
-            packets = json.loads(data)
+            packets = json.loads(data.decode('utf-8'))
             for p in packets:
                 p = normalize(p, self.parent._options['encoding'])
                 if self.protocol:
-                    self.protocol.dataReceived(p)
+                    self.protocol.dataReceived(p.encode('utf-8'))
             return None
-        except ValueError:
+        except (ValueError, UnicodeDecodeError):
             return "Broken JSON encoding."
         
     def getPeer(self):

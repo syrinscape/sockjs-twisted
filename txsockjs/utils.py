@@ -23,26 +23,24 @@
 # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 # OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from six import binary_type, text_type
 from twisted.internet.ssl import DefaultOpenSSLContextFactory
 import json
 
-def normalize(s, encoding):
-    if not isinstance(s, basestring):
+def normalize(value, encoding):
+    if isinstance(value, binary_type):
         try:
-            return str(s)
-        except UnicodeEncodeError:
-            return unicode(s).encode('utf-8','backslashreplace')
-    elif isinstance(s, unicode):
-        return s.encode('utf-8', 'backslashreplace')
-    else:
-        if s.decode('utf-8', 'ignore').encode('utf-8', 'ignore') == s: # Ensure s is a valid UTF-8 string
-            return s
-        else: # Otherwise assume it is Windows 1252
-            return s.decode(encoding, 'replace').encode('utf-8', 'backslashreplace')
+            return value.decode('utf-8')
+        except UnicodeDecodeError:
+            return value.decode(encoding, 'replace')
+    if isinstance(value, text_type):
+        return value
+    return text_type(value)
 
 def broadcast(message, targets, encoding="cp1252"):
     message = normalize(message, encoding)
-    json_msg = 'a{0}'.format(json.dumps([message], separators=(',',':')))
+    json_msg = 'a{0}'.format(
+        json.dumps([message], separators=(',',':'))).encode('ascii')
     for t in targets:
         if getattr(t, "writeRaw", None) is not None:
             t.writeRaw(json_msg)
